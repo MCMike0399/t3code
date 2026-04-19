@@ -52,6 +52,7 @@ import {
   makeAcpPlanUpdatedEvent,
   makeAcpRequestOpenedEvent,
   makeAcpRequestResolvedEvent,
+  makeAcpThinkingDeltaEvent,
   makeAcpToolCallEvent,
 } from "../acp/AcpCoreRuntimeEvents.ts";
 import { parsePermissionRequest } from "../acp/AcpRuntimeModel.ts";
@@ -502,6 +503,7 @@ function makeKimiAdapter(options?: KimiAdapterLiveOptions) {
                         turnId: ctx.activeTurnId,
                         toolCall: event.toolCall,
                         rawPayload: event.rawPayload,
+                        ...(event.isNew !== undefined ? { isNewToolCall: event.isNew } : {}),
                       }),
                     );
                     return;
@@ -509,6 +511,20 @@ function makeKimiAdapter(options?: KimiAdapterLiveOptions) {
                     yield* logNative(ctx.threadId, "session/update", event.rawPayload);
                     yield* offerRuntimeEvent(
                       makeAcpContentDeltaEvent({
+                        stamp: yield* makeEventStamp(),
+                        provider: PROVIDER,
+                        threadId: ctx.threadId,
+                        turnId: ctx.activeTurnId,
+                        ...(event.itemId ? { itemId: event.itemId } : {}),
+                        text: event.text,
+                        rawPayload: event.rawPayload,
+                      }),
+                    );
+                    return;
+                  case "ThinkingDelta":
+                    yield* logNative(ctx.threadId, "session/update", event.rawPayload);
+                    yield* offerRuntimeEvent(
+                      makeAcpThinkingDeltaEvent({
                         stamp: yield* makeEventStamp(),
                         provider: PROVIDER,
                         threadId: ctx.threadId,

@@ -753,6 +753,7 @@ function makeCursorAdapter(options?: CursorAdapterLiveOptions) {
                         turnId: ctx.activeTurnId,
                         toolCall: event.toolCall,
                         rawPayload: event.rawPayload,
+                        ...(event.isNew !== undefined ? { isNewToolCall: event.isNew } : {}),
                       }),
                     );
                     return;

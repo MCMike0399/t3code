@@ -607,6 +607,7 @@ const handleSessionUpdate = ({
           _tag: "ToolCallUpdated",
           toolCall: merged,
           rawPayload: event.rawPayload,
+          isNew: previous === undefined,
         });
         continue;
       }

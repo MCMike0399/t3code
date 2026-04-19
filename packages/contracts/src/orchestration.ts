@@ -677,12 +677,16 @@ const ThreadSessionSetCommand = Schema.Struct({
   createdAt: IsoDateTime,
 });
 
+export const AssistantTextKind = Schema.Literal("assistant", "reasoning");
+export type AssistantTextKind = typeof AssistantTextKind.Type;
+
 const ThreadMessageAssistantDeltaCommand = Schema.Struct({
   type: Schema.Literal("thread.message.assistant.delta"),
   commandId: CommandId,
   threadId: ThreadId,
   messageId: MessageId,
   delta: Schema.String,
+  textKind: Schema.optional(AssistantTextKind),
   turnId: Schema.optional(TurnId),
   createdAt: IsoDateTime,
 });
@@ -866,6 +870,7 @@ export const ThreadMessageSentPayload = Schema.Struct({
   messageId: MessageId,
   role: OrchestrationMessageRole,
   text: Schema.String,
+  textKind: Schema.optional(AssistantTextKind),
   attachments: Schema.optional(Schema.Array(ChatAttachment)),
   turnId: Schema.NullOr(TurnId),
   streaming: Schema.Boolean,

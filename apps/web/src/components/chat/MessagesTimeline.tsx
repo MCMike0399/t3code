@@ -17,7 +17,10 @@ import { summarizeTurnDiffStats } from "../../lib/turnDiffTree";
 import ChatMarkdown from "../ChatMarkdown";
 import {
   BotIcon,
+  BrainIcon,
   CheckIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
   CircleAlertIcon,
   EyeIcon,
   GlobeIcon,
@@ -30,6 +33,7 @@ import {
   ZapIcon,
 } from "lucide-react";
 import { Button } from "../ui/button";
+import { Collapsible, CollapsibleTrigger, CollapsiblePanel } from "../ui/collapsible";
 import { buildExpandedImagePreview, ExpandedImagePreview } from "./ExpandedImagePreview";
 import { ProposedPlanCard } from "./ProposedPlanCard";
 import { ChangedFilesTree } from "./ChangedFilesTree";
@@ -401,6 +405,12 @@ function TimelineRowContent({ row }: { row: TimelineRow }) {
                   <span className="h-px flex-1 bg-border" />
                 </div>
               )}
+              {row.message.reasoningText && (
+                <ReasoningSection
+                  reasoningText={row.message.reasoningText}
+                  isStreaming={row.message.streaming}
+                />
+              )}
               <div className="min-w-0 px-1 py-0.5">
                 <ChatMarkdown
                   text={messageText}
@@ -479,6 +489,54 @@ function TimelineRowContent({ row }: { row: TimelineRow }) {
     </div>
   );
 }
+
+// ---------------------------------------------------------------------------
+// Reasoning Section — Collapsible display for model thinking/reasoning output
+// ---------------------------------------------------------------------------
+
+const ReasoningSection = memo(function ReasoningSection({
+  reasoningText,
+  isStreaming,
+}: {
+  reasoningText: string;
+  isStreaming: boolean;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+
+  if (!reasoningText.trim()) {
+    return null;
+  }
+
+  return (
+    <div className="mb-2 px-1">
+      <Collapsible open={isOpen} onOpenChange={setIsOpen}>
+        <CollapsibleTrigger className="flex w-full items-center gap-2 rounded-md border border-border/50 bg-muted/30 px-3 py-2 text-xs text-muted-foreground hover:bg-muted/50 transition-colors">
+          {isOpen ? (
+            <ChevronDownIcon className="size-3.5" />
+          ) : (
+            <ChevronRightIcon className="size-3.5" />
+          )}
+          <BrainIcon className="size-3.5" />
+          <span className="font-medium">Thinking</span>
+          {isStreaming && (
+            <span className="ml-1 inline-flex items-center gap-[3px]">
+              <span className="h-1 w-1 rounded-full bg-muted-foreground/50 animate-pulse" />
+              <span className="h-1 w-1 rounded-full bg-muted-foreground/50 animate-pulse [animation-delay:200ms]" />
+              <span className="h-1 w-1 rounded-full bg-muted-foreground/50 animate-pulse [animation-delay:400ms]" />
+            </span>
+          )}
+        </CollapsibleTrigger>
+        <CollapsiblePanel className="mt-2">
+          <div className="rounded-md border border-border/30 bg-muted/20 px-3 py-2">
+            <pre className="whitespace-pre-wrap text-xs text-muted-foreground/80 font-mono leading-relaxed">
+              {reasoningText}
+            </pre>
+          </div>
+        </CollapsiblePanel>
+      </Collapsible>
+    </div>
+  );
+});
 
 // ---------------------------------------------------------------------------
 // Self-ticking components — bypass LegendList memoisation entirely.

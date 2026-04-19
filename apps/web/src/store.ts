@@ -1353,10 +1353,11 @@ function applyEnvironmentOrchestrationEvent(
 
     case "thread.message-sent":
       return updateThreadState(state, event.payload.threadId, (thread) => {
+        const isReasoningText = event.payload.textKind === "reasoning";
         const message = mapMessage(thread.environmentId, {
           id: event.payload.messageId,
           role: event.payload.role,
-          text: event.payload.text,
+          text: isReasoningText ? "" : event.payload.text,
           ...(event.payload.attachments !== undefined
             ? { attachments: event.payload.attachments }
             : {}),
@@ -1373,10 +1374,15 @@ function applyEnvironmentOrchestrationEvent(
                 : {
                     ...entry,
                     text: message.streaming
-                      ? `${entry.text}${message.text}`
+                      ? isReasoningText
+                        ? entry.text
+                        : `${entry.text}${message.text}`
                       : message.text.length > 0
                         ? message.text
                         : entry.text,
+                    reasoningText: message.streaming && isReasoningText
+                      ? `${entry.reasoningText ?? ""}${event.payload.text}`
+                      : entry.reasoningText,
                     streaming: message.streaming,
                     ...(message.turnId !== undefined ? { turnId: message.turnId } : {}),
                     ...(message.streaming

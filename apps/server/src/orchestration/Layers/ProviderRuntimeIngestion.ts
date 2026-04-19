@@ -1221,14 +1221,22 @@ const make = Effect.gen(function* () {
         }
       }
 
-      const assistantDelta =
-        event.type === "content.delta" && event.payload.streamKind === "assistant_text"
-          ? event.payload.delta
+      const assistantDeltaInfo =
+        event.type === "content.delta" &&
+        (event.payload.streamKind === "assistant_text" ||
+          event.payload.streamKind === "reasoning_text")
+          ? {
+              delta: event.payload.delta,
+              textKind:
+                event.payload.streamKind === "reasoning_text"
+                  ? ("reasoning" as const)
+                  : ("assistant" as const),
+            }
           : undefined;
       const proposedPlanDelta =
         event.type === "turn.proposed.delta" ? event.payload.delta : undefined;
 
-      if (assistantDelta && assistantDelta.length > 0) {
+      if (assistantDeltaInfo && assistantDeltaInfo.delta.length > 0) {
         const turnId = toTurnId(event.turnId);
         const assistantMessageId = yield* getOrCreateAssistantMessageId({
           threadId: thread.id,
@@ -1244,7 +1252,10 @@ const make = Effect.gen(function* () {
           (settings) => (settings.enableAssistantStreaming ? "streaming" : "buffered"),
         );
         if (assistantDeliveryMode === "buffered") {
-          const spillChunk = yield* appendBufferedAssistantText(assistantMessageId, assistantDelta);
+          const spillChunk = yield* appendBufferedAssistantText(
+            assistantMessageId,
+            assistantDeltaInfo.delta,
+          );
           if (spillChunk.length > 0) {
             yield* orchestrationEngine.dispatch({
               type: "thread.message.assistant.delta",
@@ -1252,6 +1263,7 @@ const make = Effect.gen(function* () {
               threadId: thread.id,
               messageId: assistantMessageId,
               delta: spillChunk,
+              textKind: assistantDeltaInfo.textKind,
               ...(turnId ? { turnId } : {}),
               createdAt: now,
             });
@@ -1262,7 +1274,8 @@ const make = Effect.gen(function* () {
             commandId: providerCommandId(event, "assistant-delta"),
             threadId: thread.id,
             messageId: assistantMessageId,
-            delta: assistantDelta,
+            delta: assistantDeltaInfo.delta,
+            textKind: assistantDeltaInfo.textKind,
             ...(turnId ? { turnId } : {}),
             createdAt: now,
           });
