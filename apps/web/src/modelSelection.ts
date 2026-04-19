@@ -66,6 +66,13 @@ const PROVIDER_CUSTOM_MODEL_CONFIG: Record<ProviderKind, ProviderCustomModelConf
     placeholder: "openai/gpt-5",
     example: "anthropic/claude-sonnet-4-5-20250929",
   },
+  kimi: {
+    provider: "kimi",
+    title: "Kimi",
+    description: "Save additional Kimi model slugs for the picker and `/model` command.",
+    placeholder: "your-kimi-model-slug",
+    example: "kimi-for-coding",
+  },
 };
 
 export const MODEL_PROVIDER_SETTINGS = Object.values(PROVIDER_CUSTOM_MODEL_CONFIG);
@@ -199,6 +206,12 @@ export function getCustomModelOptionsByProvider(
       providers,
       "opencode",
       selectedProvider === "opencode" ? selectedModel : undefined,
+    ),
+    kimi: getAppModelOptions(
+      settings,
+      providers,
+      "kimi",
+      selectedProvider === "kimi" ? selectedModel : undefined,
     ),
   };
 }
