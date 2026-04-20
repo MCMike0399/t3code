@@ -63,9 +63,16 @@ export type AcpParsedSessionEvent =
       readonly _tag: "ToolCallUpdated";
       readonly toolCall: AcpToolCallState;
       readonly rawPayload: unknown;
+      readonly isNew?: boolean;
     }
   | {
       readonly _tag: "ContentDelta";
+      readonly itemId?: string;
+      readonly text: string;
+      readonly rawPayload: unknown;
+    }
+  | {
+      readonly _tag: "ThinkingDelta";
       readonly itemId?: string;
       readonly text: string;
       readonly rawPayload: unknown;
@@ -192,12 +199,24 @@ function normalizeCommandValue(value: unknown): string | undefined {
   return parts.length > 0 ? parts.join(" ") : undefined;
 }
 
+const SHELL_TITLE_PREFIX_REGEX = /^(?:Shell|Bash|Terminal|Run):\s+(.+)$/i;
+
 function extractCommandFromTitle(title: string | undefined): string | undefined {
   if (!title) {
     return undefined;
   }
-  const match = /`([^`]+)`/.exec(title);
-  return match?.[1]?.trim() || undefined;
+  const backtickMatch = /`([^`]+)`/.exec(title);
+  const backtickCommand = backtickMatch?.[1]?.trim();
+  if (backtickCommand) {
+    return backtickCommand;
+  }
+  const prefixMatch = SHELL_TITLE_PREFIX_REGEX.exec(title.trim());
+  return prefixMatch?.[1]?.trim() || undefined;
+}
+
+function titleLooksLikeShellCommand(title: string | undefined): boolean {
+  if (!title) return false;
+  return SHELL_TITLE_PREFIX_REGEX.test(title.trim());
 }
 
 function extractToolCallCommand(rawInput: unknown, title: string | undefined): string | undefined {
@@ -235,6 +254,44 @@ function extractTextContentFromToolCallContent(
     })
     .filter((entry): entry is string => entry !== undefined);
   return chunks.length > 0 ? chunks.join("\n") : undefined;
+}
+
+/**
+ * Kimi's "Agent" sub-agent tool streams its input JSON character-by-character
+ * inside `content[0].content.text` — titled simply "Agent" with no command
+ * extractable from elsewhere. This helper pulls the most human-readable field
+ * from whatever JSON prefix has arrived so the timeline can render
+ * `Agent: <description>` or similar, rather than leaving the tool card empty.
+ */
+function extractStreamedJsonSubtitle(rawText: string | undefined): string | undefined {
+  if (!rawText) return undefined;
+  const trimmed = rawText.trim();
+  if (!trimmed.startsWith("{")) return undefined;
+  const completeJson = (() => {
+    try {
+      return JSON.parse(trimmed) as unknown;
+    } catch {
+      return undefined;
+    }
+  })();
+  if (isRecord(completeJson)) {
+    for (const key of ["description", "prompt", "task", "query", "title"] as const) {
+      const value = completeJson[key];
+      if (typeof value === "string" && value.trim().length > 0) {
+        return value.trim();
+      }
+    }
+  }
+  // Partial JSON — try to surface the first string value so the user sees
+  // the streamed input take shape rather than a static title.
+  const partialMatch = /"(description|prompt|task|query|title)"\s*:\s*"((?:[^"\\]|\\.)*)/.exec(
+    trimmed,
+  );
+  const partialValue = partialMatch?.[2];
+  if (partialValue && partialValue.length > 0) {
+    return partialValue.replace(/\\"/g, '"').replace(/\\\\/g, "\\");
+  }
+  return undefined;
 }
 
 function normalizeToolKind(kind: unknown): string | undefined {
@@ -279,12 +336,20 @@ function makeToolCallState(
   const title = input.title?.trim() || undefined;
   const command = extractToolCallCommand(input.rawInput, title);
   const textContent = extractTextContentFromToolCallContent(input.content);
+  // Kimi's Agent sub-agent tool streams its input JSON inside content[0] —
+  // pulling `description`/`prompt` out of the stream keeps the timeline
+  // card informative (`Agent: Explore codebase`) as the args arrive.
+  const streamedSubtitle = extractStreamedJsonSubtitle(textContent);
   const normalizedTitle =
     title && title.toLowerCase() !== "terminal" && title.toLowerCase() !== "tool call"
       ? title
       : undefined;
   const data: Record<string, unknown> = { toolCallId };
-  const kind = normalizeToolKind(input.kind);
+  const declaredKind = normalizeToolKind(input.kind);
+  // Kimi ACP omits `kind` on tool_call frames and only sets title="Shell: <cmd>".
+  // Infer execute-kind so shell invocations render with the terminal icon and
+  // approvals route to `exec_command_approval`, matching Codex/Cursor UX.
+  const kind = declaredKind ?? (titleLooksLikeShellCommand(title) ? "execute" : undefined);
   if (kind) {
     data.kind = kind;
   }
@@ -303,12 +368,13 @@ function makeToolCallState(
   if (input.locations !== undefined) {
     data.locations = input.locations;
   }
-  const fallbackDetail = command ?? normalizedTitle ?? textContent;
+  const fallbackDetail = command ?? streamedSubtitle ?? normalizedTitle ?? textContent;
   const hasPresentationSeed =
     title !== undefined ||
     kind !== undefined ||
     command !== undefined ||
     normalizedTitle !== undefined ||
+    streamedSubtitle !== undefined ||
     textContent !== undefined;
   const presentation = hasPresentationSeed
     ? deriveToolActivityPresentation({
@@ -392,7 +458,7 @@ export function parsePermissionRequest(
     },
     { fallbackStatus: "pending" },
   );
-  const kind = normalizeToolKind(params.toolCall.kind) ?? "unknown";
+  const kind = normalizeToolKind(params.toolCall.kind) ?? toolCall?.kind ?? "unknown";
   const detail =
     toolCall?.command ??
     toolCall?.title ??
@@ -468,6 +534,16 @@ export function parseSessionUpdateEvent(params: EffectAcpSchema.SessionNotificat
       if (upd.content.type === "text" && upd.content.text.length > 0) {
         events.push({
           _tag: "ContentDelta",
+          text: upd.content.text,
+          rawPayload: params,
+        });
+      }
+      break;
+    }
+    case "agent_thought_chunk": {
+      if (upd.content.type === "text" && upd.content.text.length > 0) {
+        events.push({
+          _tag: "ThinkingDelta",
           text: upd.content.text,
           rawPayload: params,
         });

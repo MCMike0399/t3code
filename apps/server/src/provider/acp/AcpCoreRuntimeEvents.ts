@@ -164,13 +164,20 @@ export function makeAcpToolCallEvent(input: {
   readonly turnId: TurnId | undefined;
   readonly toolCall: AcpToolCallState;
   readonly rawPayload: unknown;
+  readonly isNewToolCall?: boolean;
 }): ProviderRuntimeEvent {
   const runtimeStatus = runtimeItemStatusFromAcpToolStatus(input.toolCall.status);
+  const eventType = (() => {
+    if (input.toolCall.status === "completed" || input.toolCall.status === "failed") {
+      return "item.completed" as const;
+    }
+    if (input.isNewToolCall) {
+      return "item.started" as const;
+    }
+    return "item.updated" as const;
+  })();
   return {
-    type:
-      input.toolCall.status === "completed" || input.toolCall.status === "failed"
-        ? "item.completed"
-        : "item.updated",
+    type: eventType,
     ...input.stamp,
     provider: input.provider,
     threadId: input.threadId,
@@ -231,6 +238,34 @@ export function makeAcpContentDeltaEvent(input: {
     ...(input.itemId ? { itemId: RuntimeItemId.make(input.itemId) } : {}),
     payload: {
       streamKind: "assistant_text",
+      delta: input.text,
+    },
+    raw: {
+      source: "acp.jsonrpc",
+      method: "session/update",
+      payload: input.rawPayload,
+    },
+  };
+}
+
+export function makeAcpThinkingDeltaEvent(input: {
+  readonly stamp: AcpEventStamp;
+  readonly provider: ProviderKind;
+  readonly threadId: ThreadId;
+  readonly turnId: TurnId | undefined;
+  readonly itemId?: string;
+  readonly text: string;
+  readonly rawPayload: unknown;
+}): ProviderRuntimeEvent {
+  return {
+    type: "content.delta",
+    ...input.stamp,
+    provider: input.provider,
+    threadId: input.threadId,
+    turnId: input.turnId,
+    ...(input.itemId ? { itemId: RuntimeItemId.make(input.itemId) } : {}),
+    payload: {
+      streamKind: "reasoning_text",
       delta: input.text,
     },
     raw: {

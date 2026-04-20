@@ -107,6 +107,7 @@ function createBaseServerConfig(): ServerConfig {
           serverPassword: "",
           customModels: [],
         },
+        kimi: { enabled: true, binaryPath: "", customModels: [] },
       },
     },
   };

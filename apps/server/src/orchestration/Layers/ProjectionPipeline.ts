@@ -762,9 +762,17 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             messageId: event.payload.messageId,
           });
           const previousMessage = Option.getOrUndefined(existingMessage);
+          // Reasoning (thinking) deltas are rendered live but never persisted
+          // into the message body — otherwise every delta would concatenate
+          // into `text` and the Thinking card's content would leak into the
+          // rehydrated message bubble on refresh.
+          const isReasoningDelta = event.payload.textKind === "reasoning";
           const nextText = Option.match(existingMessage, {
-            onNone: () => event.payload.text,
+            onNone: () => (isReasoningDelta ? "" : event.payload.text),
             onSome: (message) => {
+              if (isReasoningDelta) {
+                return message.text;
+              }
               if (event.payload.streaming) {
                 return `${message.text}${event.payload.text}`;
               }

@@ -607,6 +607,7 @@ const handleSessionUpdate = ({
           _tag: "ToolCallUpdated",
           toolCall: merged,
           rawPayload: event.rawPayload,
+          isNew: previous === undefined,
         });
         continue;
       }
@@ -652,10 +653,15 @@ function shouldEmitToolCallUpdate(
   if (next.status === "completed" || next.status === "failed") {
     return true;
   }
-  if (!next.detail) {
-    return false;
+  // First frame — emit if we have anything meaningful to render so that the
+  // user sees the tool call start. Providers like Kimi stream non-shell
+  // tool invocations (e.g. an "Agent" sub-agent) whose initial frames carry
+  // a title but no command/detail yet. Dropping those hid the activity
+  // entirely until the tool completed, leaving the UI stuck on "Working".
+  if (previous === undefined) {
+    return Boolean(next.title || next.detail || next.command || next.kind);
   }
-  return previous === undefined || previous.title !== next.title || previous.detail !== next.detail;
+  return previous.title !== next.title || previous.detail !== next.detail;
 }
 
 const assistantItemId = (sessionId: string, segmentIndex: number) =>

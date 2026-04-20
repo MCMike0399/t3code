@@ -16,6 +16,7 @@ import {
   getProviderModels,
   resolveSelectableProvider,
 } from "./providerModels";
+import { ModelEsque } from "./components/chat/providerIconUtils";
 
 const MAX_CUSTOM_MODEL_COUNT = 32;
 export const MAX_CUSTOM_MODEL_LENGTH = 256;
@@ -31,6 +32,8 @@ export type ProviderCustomModelConfig = {
 export interface AppModelOption {
   slug: string;
   name: string;
+  shortName?: string;
+  subProvider?: string;
   isCustom: boolean;
 }
 
@@ -62,6 +65,13 @@ const PROVIDER_CUSTOM_MODEL_CONFIG: Record<ProviderKind, ProviderCustomModelConf
     description: "Save additional OpenCode model slugs in `provider/model` format.",
     placeholder: "openai/gpt-5",
     example: "anthropic/claude-sonnet-4-5-20250929",
+  },
+  kimi: {
+    provider: "kimi",
+    title: "Kimi",
+    description: "Save additional Kimi model slugs for the picker and `/model` command.",
+    placeholder: "your-kimi-model-slug",
+    example: "kimi-for-coding",
   },
 };
 
@@ -103,9 +113,11 @@ export function getAppModelOptions(
   selectedModel?: string | null,
 ): AppModelOption[] {
   const options: AppModelOption[] = getProviderModels(providers, provider).map(
-    ({ slug, name, isCustom }) => ({
+    ({ slug, name, shortName, subProvider, isCustom }) => ({
       slug,
       name,
+      ...(shortName ? { shortName } : {}),
+      ...(subProvider ? { subProvider } : {}),
       isCustom,
     }),
   );
@@ -169,7 +181,7 @@ export function getCustomModelOptionsByProvider(
   providers: ReadonlyArray<ServerProvider>,
   selectedProvider?: ProviderKind | null,
   selectedModel?: string | null,
-): Record<ProviderKind, ReadonlyArray<{ slug: string; name: string }>> {
+): Record<ProviderKind, ReadonlyArray<ModelEsque>> {
   return {
     codex: getAppModelOptions(
       settings,
@@ -194,6 +206,12 @@ export function getCustomModelOptionsByProvider(
       providers,
       "opencode",
       selectedProvider === "opencode" ? selectedModel : undefined,
+    ),
+    kimi: getAppModelOptions(
+      settings,
+      providers,
+      "kimi",
+      selectedProvider === "kimi" ? selectedModel : undefined,
     ),
   };
 }

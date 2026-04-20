@@ -19,6 +19,7 @@ import {
 import { CodexTextGenerationLive } from "./CodexTextGeneration.ts";
 import { ClaudeTextGenerationLive } from "./ClaudeTextGeneration.ts";
 import { CursorTextGenerationLive } from "./CursorTextGeneration.ts";
+import { KimiTextGenerationLive } from "./KimiTextGeneration.ts";
 import { OpenCodeTextGenerationLive } from "./OpenCodeTextGeneration.ts";
 
 // ---------------------------------------------------------------------------
@@ -41,6 +42,10 @@ class OpenCodeTextGen extends Context.Service<OpenCodeTextGen, TextGenerationSha
   "t3/git/Layers/RoutingTextGeneration/OpenCodeTextGen",
 ) {}
 
+class KimiTextGen extends Context.Service<KimiTextGen, TextGenerationShape>()(
+  "t3/git/Layers/RoutingTextGeneration/KimiTextGen",
+) {}
+
 // ---------------------------------------------------------------------------
 // Routing implementation
 // ---------------------------------------------------------------------------
@@ -50,6 +55,7 @@ const makeRoutingTextGeneration = Effect.gen(function* () {
   const claude = yield* ClaudeTextGen;
   const cursor = yield* CursorTextGen;
   const openCode = yield* OpenCodeTextGen;
+  const kimi = yield* KimiTextGen;
 
   const route = (provider?: TextGenerationProvider): TextGenerationShape =>
     provider === "claudeAgent"
@@ -58,7 +64,9 @@ const makeRoutingTextGeneration = Effect.gen(function* () {
         ? openCode
         : provider === "cursor"
           ? cursor
-          : codex;
+          : provider === "kimi"
+            ? kimi
+            : codex;
 
   return {
     generateCommitMessage: (input) =>
@@ -101,6 +109,14 @@ const InternalOpenCodeLayer = Layer.effect(
   }),
 ).pipe(Layer.provide(OpenCodeTextGenerationLive));
 
+const InternalKimiLayer = Layer.effect(
+  KimiTextGen,
+  Effect.gen(function* () {
+    const svc = yield* TextGeneration;
+    return svc;
+  }),
+).pipe(Layer.provide(KimiTextGenerationLive));
+
 export const RoutingTextGenerationLive = Layer.effect(
   TextGeneration,
   makeRoutingTextGeneration,
@@ -109,4 +125,5 @@ export const RoutingTextGenerationLive = Layer.effect(
   Layer.provide(InternalClaudeLayer),
   Layer.provide(InternalCursorLayer),
   Layer.provide(InternalOpenCodeLayer),
+  Layer.provide(InternalKimiLayer),
 );

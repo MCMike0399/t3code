@@ -1532,6 +1532,99 @@ describe("ProviderRuntimeIngestion", () => {
     expect(message?.streaming).toBe(false);
   });
 
+  it("splits buffered reasoning and assistant text into separate deltas on turn completion", async () => {
+    const harness = await createHarness();
+    const now = new Date().toISOString();
+
+    harness.emit({
+      type: "turn.started",
+      eventId: asEventId("evt-turn-started-buffered-split"),
+      provider: "codex",
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-buffered-split"),
+    });
+    await waitForThread(
+      harness.engine,
+      (thread) =>
+        thread.session?.status === "running" && thread.session?.activeTurnId === "turn-buffered-split",
+    );
+
+    harness.emit({
+      type: "content.delta",
+      eventId: asEventId("evt-reasoning-delta-buffered-split"),
+      provider: "codex",
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-buffered-split"),
+      itemId: asItemId("item-buffered-split"),
+      payload: {
+        streamKind: "reasoning_text",
+        delta: "thinking out loud",
+      },
+    });
+    harness.emit({
+      type: "content.delta",
+      eventId: asEventId("evt-assistant-delta-buffered-split"),
+      provider: "codex",
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-buffered-split"),
+      itemId: asItemId("item-buffered-split"),
+      payload: {
+        streamKind: "assistant_text",
+        delta: "final answer",
+      },
+    });
+    harness.emit({
+      type: "turn.completed",
+      eventId: asEventId("evt-turn-completed-buffered-split"),
+      provider: "codex",
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-buffered-split"),
+      payload: { state: "completed", stopReason: "end_turn" },
+    });
+
+    await waitForThread(harness.engine, (entry) =>
+      entry.messages.some(
+        (message: ProviderRuntimeTestMessage) =>
+          message.id.startsWith("assistant:item-buffered-split") && !message.streaming,
+      ),
+    );
+
+    const events = await Effect.runPromise(
+      Stream.runCollect(harness.engine.readEvents(0)).pipe(
+        Effect.map((chunk) => Array.from(chunk)),
+      ),
+    );
+    const assistantEvents = events.filter(
+      (event): event is Extract<(typeof events)[number], { type: "thread.message-sent" }> =>
+        event.type === "thread.message-sent" &&
+        event.payload.messageId.startsWith("assistant:item-buffered-split"),
+    );
+    const reasoningDelta = assistantEvents.find(
+      (event) => event.payload.textKind === "reasoning" && event.payload.text.length > 0,
+    );
+    const assistantDelta = assistantEvents.find(
+      (event) =>
+        event.payload.textKind === "assistant" &&
+        event.payload.text.length > 0 &&
+        event.payload.streaming,
+    );
+    expect(reasoningDelta?.payload.text).toBe("thinking out loud");
+    expect(assistantDelta?.payload.text).toBe("final answer");
+
+    // Buffer must NOT be flushed as a single concatenated assistant delta —
+    // reasoning text would be mis-tagged and leak into the message bubble.
+    const combinedAsAssistant = assistantEvents.some(
+      (event) =>
+        event.payload.textKind !== "reasoning" &&
+        event.payload.text.includes("thinking out loud"),
+    );
+    expect(combinedAsAssistant).toBe(false);
+  });
+
   it("flushes and completes buffered assistant text when an approval request opens", async () => {
     const harness = await createHarness();
     const now = new Date().toISOString();

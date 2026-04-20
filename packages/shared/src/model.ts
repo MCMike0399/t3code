@@ -5,6 +5,7 @@ import {
   type ClaudeModelOptions,
   type CodexModelOptions,
   type CursorModelOptions,
+  type KimiModelOptions,
   type ModelCapabilities,
   type ModelSelection,
   type OpenCodeModelOptions,
@@ -134,7 +135,7 @@ function resolveLabeledOption(
   if (raw && options.some((option) => option.value === raw)) {
     return raw;
   }
-  return options.find((option) => option.isDefault)?.value;
+  return options.find((option) => option.isDefault)?.value ?? options[0]?.value;
 }
 
 export function normalizeOpenCodeModelOptionsWithCapabilities(
@@ -146,6 +147,17 @@ export function normalizeOpenCodeModelOptionsWithCapabilities(
   const nextOptions: OpenCodeModelOptions = {
     ...(variant ? { variant } : {}),
     ...(agent ? { agent } : {}),
+  };
+  return Object.keys(nextOptions).length > 0 ? nextOptions : undefined;
+}
+
+export function normalizeKimiModelOptionsWithCapabilities(
+  caps: ModelCapabilities,
+  modelOptions: KimiModelOptions | null | undefined,
+): KimiModelOptions | undefined {
+  const thinking = caps.supportsThinkingToggle ? modelOptions?.thinking : undefined;
+  const nextOptions: KimiModelOptions = {
+    ...(thinking !== undefined ? { thinking } : {}),
   };
   return Object.keys(nextOptions).length > 0 ? nextOptions : undefined;
 }
@@ -167,6 +179,8 @@ export function normalizeProviderModelOptionsWithCapabilities(
         caps,
         modelOptions as OpenCodeModelOptions,
       );
+    case "kimi":
+      return normalizeKimiModelOptionsWithCapabilities(caps, modelOptions as KimiModelOptions);
   }
 }
 
@@ -278,6 +292,12 @@ export function createModelSelection(
         provider,
         model,
         ...(options ? { options: options as OpenCodeModelOptions } : {}),
+      };
+    case "kimi":
+      return {
+        provider,
+        model,
+        ...(options ? { options: options as KimiModelOptions } : {}),
       };
   }
 }

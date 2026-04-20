@@ -171,7 +171,7 @@ describe("AcpSessionRuntime", () => {
     ),
   );
 
-  it.effect("suppresses generic placeholder tool updates until completion", () =>
+  it.effect("emits the first generic placeholder tool frame then coalesces through completion", () =>
     Effect.gen(function* () {
       const runtime = yield* AcpSessionRuntime;
       yield* runtime.start();
@@ -181,14 +181,18 @@ describe("AcpSessionRuntime", () => {
       });
       expect(promptResult).toMatchObject({ stopReason: "end_turn" });
 
-      const notes = Array.from(yield* Stream.runCollect(Stream.take(runtime.getEvents(), 1)));
-      expect(notes.map((note) => note._tag)).toEqual(["ToolCallUpdated"]);
-      const toolCall = notes[0];
-      expect(toolCall?._tag).toBe("ToolCallUpdated");
-      if (toolCall?._tag === "ToolCallUpdated") {
-        expect(toolCall.toolCall.status).toBe("completed");
-        expect(toolCall.toolCall.title).toBe("Read file");
+      const notes = Array.from(yield* Stream.runCollect(Stream.take(runtime.getEvents(), 2)));
+      const toolEvents = notes.filter((note) => note._tag === "ToolCallUpdated");
+      expect(toolEvents.length).toBeGreaterThanOrEqual(1);
+      const firstFrame = toolEvents[0];
+      if (firstFrame?._tag === "ToolCallUpdated") {
+        expect(firstFrame.isNew).toBe(true);
+        expect(firstFrame.toolCall.title).toBe("Read file");
       }
+      const completedFrame = toolEvents.find(
+        (note) => note._tag === "ToolCallUpdated" && note.toolCall.status === "completed",
+      );
+      expect(completedFrame).toBeDefined();
     }).pipe(
       Effect.provide(
         AcpSessionRuntime.layer({

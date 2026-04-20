@@ -1353,10 +1353,11 @@ function applyEnvironmentOrchestrationEvent(
 
     case "thread.message-sent":
       return updateThreadState(state, event.payload.threadId, (thread) => {
+        const isReasoningText = event.payload.textKind === "reasoning";
         const message = mapMessage(thread.environmentId, {
           id: event.payload.messageId,
           role: event.payload.role,
-          text: event.payload.text,
+          text: isReasoningText ? "" : event.payload.text,
           ...(event.payload.attachments !== undefined
             ? { attachments: event.payload.attachments }
             : {}),
@@ -1367,30 +1368,38 @@ function applyEnvironmentOrchestrationEvent(
         });
         const existingMessage = thread.messages.find((entry) => entry.id === message.id);
         const messages = existingMessage
-          ? thread.messages.map((entry) =>
-              entry.id !== message.id
-                ? entry
-                : {
-                    ...entry,
-                    text: message.streaming
-                      ? `${entry.text}${message.text}`
-                      : message.text.length > 0
-                        ? message.text
-                        : entry.text,
-                    streaming: message.streaming,
-                    ...(message.turnId !== undefined ? { turnId: message.turnId } : {}),
-                    ...(message.streaming
-                      ? entry.completedAt !== undefined
-                        ? { completedAt: entry.completedAt }
-                        : {}
-                      : message.completedAt !== undefined
-                        ? { completedAt: message.completedAt }
-                        : {}),
-                    ...(message.attachments !== undefined
-                      ? { attachments: message.attachments }
-                      : {}),
-                  },
-            )
+          ? thread.messages.map((entry) => {
+              if (entry.id !== message.id) return entry;
+              const nextReasoningText =
+                message.streaming && isReasoningText
+                  ? `${entry.reasoningText ?? ""}${event.payload.text}`
+                  : entry.reasoningText;
+              return {
+                ...entry,
+                text: message.streaming
+                  ? isReasoningText
+                    ? entry.text
+                    : `${entry.text}${message.text}`
+                  : message.text.length > 0
+                    ? message.text
+                    : entry.text,
+                ...(nextReasoningText !== undefined
+                  ? { reasoningText: nextReasoningText }
+                  : {}),
+                streaming: message.streaming,
+                ...(message.turnId !== undefined ? { turnId: message.turnId } : {}),
+                ...(message.streaming
+                  ? entry.completedAt !== undefined
+                    ? { completedAt: entry.completedAt }
+                    : {}
+                  : message.completedAt !== undefined
+                    ? { completedAt: message.completedAt }
+                    : {}),
+                ...(message.attachments !== undefined
+                  ? { attachments: message.attachments }
+                  : {}),
+              };
+            })
           : [...thread.messages, message];
         const cappedMessages = messages.slice(-MAX_THREAD_MESSAGES);
         const turnDiffSummaries =

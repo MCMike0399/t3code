@@ -46,6 +46,7 @@ export interface ChatMessage {
   id: MessageId;
   role: "user" | "assistant" | "system";
   text: string;
+  reasoningText?: string;
   attachments?: ChatAttachment[];
   turnId?: TurnId | null;
   createdAt: string;
