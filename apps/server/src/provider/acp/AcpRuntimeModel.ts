@@ -199,12 +199,24 @@ function normalizeCommandValue(value: unknown): string | undefined {
   return parts.length > 0 ? parts.join(" ") : undefined;
 }
 
+const SHELL_TITLE_PREFIX_REGEX = /^(?:Shell|Bash|Terminal|Run):\s+(.+)$/i;
+
 function extractCommandFromTitle(title: string | undefined): string | undefined {
   if (!title) {
     return undefined;
   }
-  const match = /`([^`]+)`/.exec(title);
-  return match?.[1]?.trim() || undefined;
+  const backtickMatch = /`([^`]+)`/.exec(title);
+  const backtickCommand = backtickMatch?.[1]?.trim();
+  if (backtickCommand) {
+    return backtickCommand;
+  }
+  const prefixMatch = SHELL_TITLE_PREFIX_REGEX.exec(title.trim());
+  return prefixMatch?.[1]?.trim() || undefined;
+}
+
+function titleLooksLikeShellCommand(title: string | undefined): boolean {
+  if (!title) return false;
+  return SHELL_TITLE_PREFIX_REGEX.test(title.trim());
 }
 
 function extractToolCallCommand(rawInput: unknown, title: string | undefined): string | undefined {
@@ -291,7 +303,11 @@ function makeToolCallState(
       ? title
       : undefined;
   const data: Record<string, unknown> = { toolCallId };
-  const kind = normalizeToolKind(input.kind);
+  const declaredKind = normalizeToolKind(input.kind);
+  // Kimi ACP omits `kind` on tool_call frames and only sets title="Shell: <cmd>".
+  // Infer execute-kind so shell invocations render with the terminal icon and
+  // approvals route to `exec_command_approval`, matching Codex/Cursor UX.
+  const kind = declaredKind ?? (titleLooksLikeShellCommand(title) ? "execute" : undefined);
   if (kind) {
     data.kind = kind;
   }
@@ -399,7 +415,7 @@ export function parsePermissionRequest(
     },
     { fallbackStatus: "pending" },
   );
-  const kind = normalizeToolKind(params.toolCall.kind) ?? "unknown";
+  const kind = normalizeToolKind(params.toolCall.kind) ?? toolCall?.kind ?? "unknown";
   const detail =
     toolCall?.command ??
     toolCall?.title ??

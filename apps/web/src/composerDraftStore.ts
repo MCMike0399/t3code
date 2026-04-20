@@ -679,11 +679,7 @@ function normalizeProviderModelOptions(
       : undefined;
 
   const kimiThinking =
-    kimiCandidate?.thinking === true
-      ? true
-      : kimiCandidate?.thinking === false
-        ? false
-        : undefined;
+    kimiCandidate?.thinking === true ? true : kimiCandidate?.thinking === false ? false : undefined;
   const kimi =
     kimiThinking !== undefined
       ? {
@@ -2334,7 +2330,13 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
             }
             const base = existing ?? createEmptyThreadDraft();
             const nextMap = { ...base.modelSelectionByProvider };
-            for (const provider of ["codex", "claudeAgent", "cursor", "opencode", "kimi"] as const) {
+            for (const provider of [
+              "codex",
+              "claudeAgent",
+              "cursor",
+              "opencode",
+              "kimi",
+            ] as const) {
               // Only touch providers explicitly present in the input
               if (!normalizedOpts || !(provider in normalizedOpts)) continue;
               const opts = normalizedOpts[provider];

@@ -31,13 +31,7 @@ export const ORCHESTRATION_WS_METHODS = {
   subscribeThread: "orchestration.subscribeThread",
 } as const;
 
-export const ProviderKind = Schema.Literals([
-  "codex",
-  "claudeAgent",
-  "cursor",
-  "opencode",
-  "kimi",
-]);
+export const ProviderKind = Schema.Literals(["codex", "claudeAgent", "cursor", "opencode", "kimi"]);
 export type ProviderKind = typeof ProviderKind.Type;
 export const ProviderApprovalPolicy = Schema.Literals([
   "untrusted",
@@ -677,7 +671,7 @@ const ThreadSessionSetCommand = Schema.Struct({
   createdAt: IsoDateTime,
 });
 
-export const AssistantTextKind = Schema.Literal("assistant", "reasoning");
+export const AssistantTextKind = Schema.Literals(["assistant", "reasoning"]);
 export type AssistantTextKind = typeof AssistantTextKind.Type;
 
 const ThreadMessageAssistantDeltaCommand = Schema.Struct({

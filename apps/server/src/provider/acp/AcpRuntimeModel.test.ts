@@ -245,6 +245,67 @@ describe("AcpRuntimeModel", () => {
     ]);
   });
 
+  it("infers execute-kind and command from a Kimi-style `Shell: <cmd>` title when kind is omitted", () => {
+    const result = parseSessionUpdateEvent({
+      sessionId: "session-kimi",
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "kimi-tool-1",
+        title: "Shell: uname -a && ls -1 | head -3",
+        status: "in_progress",
+      },
+    } satisfies EffectAcpSchema.SessionNotification);
+
+    expect(result.events).toHaveLength(1);
+    const [event] = result.events;
+    if (event?._tag !== "ToolCallUpdated") {
+      throw new Error("expected ToolCallUpdated");
+    }
+    expect(event.toolCall).toMatchObject({
+      kind: "execute",
+      status: "inProgress",
+      command: "uname -a && ls -1 | head -3",
+    });
+    expect(event.toolCall.data).toMatchObject({
+      kind: "execute",
+      command: "uname -a && ls -1 | head -3",
+    });
+  });
+
+  it("routes a Kimi-style shell permission request to exec_command_approval shape", () => {
+    const request = parsePermissionRequest({
+      sessionId: "session-kimi",
+      options: [
+        { optionId: "approve", name: "Approve once", kind: "allow_once" },
+        { optionId: "reject", name: "Reject", kind: "reject_once" },
+      ],
+      toolCall: {
+        toolCallId: "kimi-tool-2",
+        title: "Shell: rm -rf /tmp/junk",
+        status: "pending",
+        content: [
+          {
+            type: "content",
+            content: {
+              type: "text",
+              text: "Requesting approval to perform: Run command `rm -rf /tmp/junk`",
+            },
+          },
+        ],
+      },
+    });
+
+    expect(request).toMatchObject({
+      kind: "execute",
+      detail: "rm -rf /tmp/junk",
+      toolCall: {
+        kind: "execute",
+        command: "rm -rf /tmp/junk",
+        status: "pending",
+      },
+    });
+  });
+
   it("keeps permission request parsing compatible with loose extension payloads", () => {
     const request = parsePermissionRequest({
       sessionId: "session-1",

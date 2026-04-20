@@ -12,8 +12,10 @@ import {
 
 type KimiAcpRuntimeKimiSettings = Pick<KimiSettings, "binaryPath">;
 
-export interface KimiAcpRuntimeInput
-  extends Omit<AcpSessionRuntimeOptions, "authMethodId" | "clientCapabilities" | "spawn"> {
+export interface KimiAcpRuntimeInput extends Omit<
+  AcpSessionRuntimeOptions,
+  "authMethodId" | "clientCapabilities" | "spawn"
+> {
   readonly childProcessSpawner: ChildProcessSpawner.ChildProcessSpawner["Service"];
   readonly kimiSettings: KimiAcpRuntimeKimiSettings | null | undefined;
 }

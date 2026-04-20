@@ -20,9 +20,7 @@ describe("buildKimiAcpSpawnInput", () => {
   });
 
   it("uses the configured binaryPath when present", () => {
-    expect(
-      buildKimiAcpSpawnInput({ binaryPath: "/usr/local/bin/kimi" }, "/tmp/project"),
-    ).toEqual({
+    expect(buildKimiAcpSpawnInput({ binaryPath: "/usr/local/bin/kimi" }, "/tmp/project")).toEqual({
       command: "/usr/local/bin/kimi",
       args: ["acp"],
       cwd: "/tmp/project",

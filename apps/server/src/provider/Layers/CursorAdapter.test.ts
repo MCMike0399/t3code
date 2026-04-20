@@ -488,7 +488,7 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
               "turn.started",
               "request.opened",
               "request.resolved",
-              "item.updated",
+              "item.started",
               "item.completed",
               "content.delta",
               "turn.completed",
@@ -498,12 +498,16 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
           const turnEvents = threadEvents.filter(
             (event) => String(event.turnId) === String(turn.turnId),
           );
-          const toolUpdates = turnEvents.filter((event) => event.type === "item.updated");
+          const toolUpdates = turnEvents.filter(
+            (event) =>
+              (event.type === "item.started" || event.type === "item.updated") &&
+              event.payload.itemType === "command_execution",
+          );
           // ACP updates can arrive either as distinct pending + in-progress events
           // or as a single coalesced in-progress update before approval resolves.
           assert.isAtLeast(toolUpdates.length, 1);
           for (const toolUpdate of toolUpdates) {
-            if (toolUpdate.type !== "item.updated") {
+            if (toolUpdate.type !== "item.started" && toolUpdate.type !== "item.updated") {
               continue;
             }
             assert.equal(toolUpdate.payload.itemType, "command_execution");
@@ -648,7 +652,7 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
         );
         assert.includeMembers(
           turnEvents.map((event) => event.type),
-          ["item.updated", "item.completed", "content.delta", "turn.completed"],
+          ["item.started", "item.completed", "content.delta", "turn.completed"],
         );
 
         const requests = yield* Effect.promise(() => readJsonLines(requestLogPath));
@@ -748,7 +752,9 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
           event.type === "item.completed" && event.payload.itemType === "assistant_message",
       );
       const toolUpdateIndex = turnEvents.findIndex(
-        (event) => event.type === "item.updated" && event.payload.itemType === "command_execution",
+        (event) =>
+          (event.type === "item.started" || event.type === "item.updated") &&
+          event.payload.itemType === "command_execution",
       );
       const toolCompletedIndex = turnEvents.findIndex(
         (event) =>

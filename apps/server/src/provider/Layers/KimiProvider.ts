@@ -141,80 +141,119 @@ function buildInitialKimiProviderSnapshot(kimiSettings: KimiSettings): ServerPro
   });
 }
 
-export const checkKimiProviderStatus = Effect.fn("checkKimiProviderStatus")(function* (): Effect.fn.Return<
-  ServerProvider,
-  ServerSettingsError,
-  ChildProcessSpawner.ChildProcessSpawner | ServerSettingsService
-> {
-  const kimiSettings = yield* Effect.service(ServerSettingsService).pipe(
-    Effect.flatMap((service) => service.getSettings),
-    Effect.map((settings) => settings.providers.kimi),
-  );
-  const checkedAt = new Date().toISOString();
-  const models = buildKimiModels(kimiSettings);
+export const checkKimiProviderStatus = Effect.fn("checkKimiProviderStatus")(
+  function* (): Effect.fn.Return<
+    ServerProvider,
+    ServerSettingsError,
+    ChildProcessSpawner.ChildProcessSpawner | ServerSettingsService
+  > {
+    const kimiSettings = yield* Effect.service(ServerSettingsService).pipe(
+      Effect.flatMap((service) => service.getSettings),
+      Effect.map((settings) => settings.providers.kimi),
+    );
+    const checkedAt = new Date().toISOString();
+    const models = buildKimiModels(kimiSettings);
 
-  if (!kimiSettings.enabled) {
-    return buildServerProvider({
-      provider: PROVIDER,
-      enabled: false,
-      checkedAt,
-      models,
-      probe: {
-        installed: false,
-        version: null,
-        status: "warning",
-        auth: { status: "unknown" },
-        message: "Kimi is disabled in T3 Code settings.",
-      },
-    });
-  }
+    if (!kimiSettings.enabled) {
+      return buildServerProvider({
+        provider: PROVIDER,
+        enabled: false,
+        checkedAt,
+        models,
+        probe: {
+          installed: false,
+          version: null,
+          status: "warning",
+          auth: { status: "unknown" },
+          message: "Kimi is disabled in T3 Code settings.",
+        },
+      });
+    }
 
-  // ── Install / version probe ───────────────────────────────────────
-  const versionProbe = yield* runKimiCommand(["--version"]).pipe(
-    Effect.timeoutOption(DEFAULT_TIMEOUT_MS),
-    Effect.result,
-  );
+    // ── Install / version probe ───────────────────────────────────────
+    const versionProbe = yield* runKimiCommand(["--version"]).pipe(
+      Effect.timeoutOption(DEFAULT_TIMEOUT_MS),
+      Effect.result,
+    );
 
-  if (Result.isFailure(versionProbe)) {
-    const error = versionProbe.failure;
-    return buildServerProvider({
-      provider: PROVIDER,
-      enabled: kimiSettings.enabled,
-      checkedAt,
-      models,
-      probe: {
-        installed: !isCommandMissingCause(error),
-        version: null,
-        status: "error",
-        auth: { status: "unknown" },
-        message: isCommandMissingCause(error)
-          ? "Kimi CLI (`kimi`) is not installed or not on PATH. See https://moonshotai.github.io/kimi-cli/ for installation instructions."
-          : `Failed to execute Kimi CLI health check: ${error instanceof Error ? error.message : String(error)}.`,
-      },
-    });
-  }
+    if (Result.isFailure(versionProbe)) {
+      const error = versionProbe.failure;
+      return buildServerProvider({
+        provider: PROVIDER,
+        enabled: kimiSettings.enabled,
+        checkedAt,
+        models,
+        probe: {
+          installed: !isCommandMissingCause(error),
+          version: null,
+          status: "error",
+          auth: { status: "unknown" },
+          message: isCommandMissingCause(error)
+            ? "Kimi CLI (`kimi`) is not installed or not on PATH. See https://moonshotai.github.io/kimi-cli/ for installation instructions."
+            : `Failed to execute Kimi CLI health check: ${error instanceof Error ? error.message : String(error)}.`,
+        },
+      });
+    }
 
-  if (Option.isNone(versionProbe.success)) {
-    return buildServerProvider({
-      provider: PROVIDER,
-      enabled: kimiSettings.enabled,
-      checkedAt,
-      models,
-      probe: {
-        installed: true,
-        version: null,
-        status: "error",
-        auth: { status: "unknown" },
-        message: "Kimi CLI is installed but timed out while running `kimi --version`.",
-      },
-    });
-  }
+    if (Option.isNone(versionProbe.success)) {
+      return buildServerProvider({
+        provider: PROVIDER,
+        enabled: kimiSettings.enabled,
+        checkedAt,
+        models,
+        probe: {
+          installed: true,
+          version: null,
+          status: "error",
+          auth: { status: "unknown" },
+          message: "Kimi CLI is installed but timed out while running `kimi --version`.",
+        },
+      });
+    }
 
-  const versionResult = versionProbe.success.value;
-  const parsedVersion = parseGenericCliVersion(`${versionResult.stdout}\n${versionResult.stderr}`);
+    const versionResult = versionProbe.success.value;
+    const parsedVersion = parseGenericCliVersion(
+      `${versionResult.stdout}\n${versionResult.stderr}`,
+    );
 
-  if (versionResult.code !== 0) {
-    const detail = detailFromResult(versionResult);
+    if (versionResult.code !== 0) {
+      const detail = detailFromResult(versionResult);
+      return buildServerProvider({
+        provider: PROVIDER,
+        enabled: kimiSettings.enabled,
+        checkedAt,
+        models,
+        probe: {
+          installed: true,
+          version: parsedVersion,
+          status: "error",
+          auth: { status: "unknown" },
+          message: detail
+            ? `Kimi CLI is installed but failed to run. ${detail}`
+            : "Kimi CLI is installed but failed to run.",
+        },
+      });
+    }
+
+    // ── Auth probe ────────────────────────────────────────────────────
+    const credentialsPresent = checkKimiCredentialsPresent();
+
+    if (!credentialsPresent) {
+      return buildServerProvider({
+        provider: PROVIDER,
+        enabled: kimiSettings.enabled,
+        checkedAt,
+        models,
+        probe: {
+          installed: true,
+          version: parsedVersion,
+          status: "error",
+          auth: { status: "unauthenticated" },
+          message: "Kimi is not authenticated. Run `kimi login` in a terminal to authenticate.",
+        },
+      });
+    }
+
     return buildServerProvider({
       provider: PROVIDER,
       enabled: kimiSettings.enabled,
@@ -223,51 +262,16 @@ export const checkKimiProviderStatus = Effect.fn("checkKimiProviderStatus")(func
       probe: {
         installed: true,
         version: parsedVersion,
-        status: "error",
-        auth: { status: "unknown" },
-        message: detail
-          ? `Kimi CLI is installed but failed to run. ${detail}`
-          : "Kimi CLI is installed but failed to run.",
+        status: "ready",
+        auth: {
+          status: "authenticated",
+          type: "kimi-code",
+          label: "Kimi Code Account",
+        },
       },
     });
-  }
-
-  // ── Auth probe ────────────────────────────────────────────────────
-  const credentialsPresent = checkKimiCredentialsPresent();
-
-  if (!credentialsPresent) {
-    return buildServerProvider({
-      provider: PROVIDER,
-      enabled: kimiSettings.enabled,
-      checkedAt,
-      models,
-      probe: {
-        installed: true,
-        version: parsedVersion,
-        status: "error",
-        auth: { status: "unauthenticated" },
-        message: "Kimi is not authenticated. Run `kimi login` in a terminal to authenticate.",
-      },
-    });
-  }
-
-  return buildServerProvider({
-    provider: PROVIDER,
-    enabled: kimiSettings.enabled,
-    checkedAt,
-    models,
-    probe: {
-      installed: true,
-      version: parsedVersion,
-      status: "ready",
-      auth: {
-        status: "authenticated",
-        type: "kimi-code",
-        label: "Kimi Code Account",
-      },
-    },
-  });
-});
+  },
+);
 
 export const KimiProviderLive = Layer.effect(
   KimiProvider,
