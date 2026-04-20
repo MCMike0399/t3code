@@ -272,6 +272,57 @@ describe("AcpRuntimeModel", () => {
     });
   });
 
+  it("extracts the description field from a partially-streamed Agent tool JSON input", () => {
+    const result = parseSessionUpdateEvent({
+      sessionId: "session-kimi",
+      update: {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "kimi-agent-1",
+        title: "Agent",
+        status: "in_progress",
+        content: [
+          {
+            type: "content",
+            content: {
+              type: "text",
+              text: '{"description": "Explore codebase', // partial JSON, mid-stream
+            },
+          },
+        ],
+      },
+    } satisfies EffectAcpSchema.SessionNotification);
+
+    expect(result.events).toHaveLength(1);
+    const [event] = result.events;
+    if (event?._tag !== "ToolCallUpdated") throw new Error("expected ToolCallUpdated");
+    expect(event.toolCall.detail).toBe("Explore codebase");
+  });
+
+  it("uses the parsed description from complete Agent JSON over the literal title", () => {
+    const result = parseSessionUpdateEvent({
+      sessionId: "session-kimi",
+      update: {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "kimi-agent-2",
+        title: "Agent",
+        status: "in_progress",
+        content: [
+          {
+            type: "content",
+            content: {
+              type: "text",
+              text: '{"description":"Audit auth","prompt":"check the session middleware","subagent_type":"coder"}',
+            },
+          },
+        ],
+      },
+    } satisfies EffectAcpSchema.SessionNotification);
+
+    const [event] = result.events;
+    if (event?._tag !== "ToolCallUpdated") throw new Error("expected ToolCallUpdated");
+    expect(event.toolCall.detail).toBe("Audit auth");
+  });
+
   it("routes a Kimi-style shell permission request to exec_command_approval shape", () => {
     const request = parsePermissionRequest({
       sessionId: "session-kimi",

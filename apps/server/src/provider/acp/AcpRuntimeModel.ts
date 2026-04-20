@@ -256,6 +256,44 @@ function extractTextContentFromToolCallContent(
   return chunks.length > 0 ? chunks.join("\n") : undefined;
 }
 
+/**
+ * Kimi's "Agent" sub-agent tool streams its input JSON character-by-character
+ * inside `content[0].content.text` — titled simply "Agent" with no command
+ * extractable from elsewhere. This helper pulls the most human-readable field
+ * from whatever JSON prefix has arrived so the timeline can render
+ * `Agent: <description>` or similar, rather than leaving the tool card empty.
+ */
+function extractStreamedJsonSubtitle(rawText: string | undefined): string | undefined {
+  if (!rawText) return undefined;
+  const trimmed = rawText.trim();
+  if (!trimmed.startsWith("{")) return undefined;
+  const completeJson = (() => {
+    try {
+      return JSON.parse(trimmed) as unknown;
+    } catch {
+      return undefined;
+    }
+  })();
+  if (isRecord(completeJson)) {
+    for (const key of ["description", "prompt", "task", "query", "title"] as const) {
+      const value = completeJson[key];
+      if (typeof value === "string" && value.trim().length > 0) {
+        return value.trim();
+      }
+    }
+  }
+  // Partial JSON — try to surface the first string value so the user sees
+  // the streamed input take shape rather than a static title.
+  const partialMatch = /"(description|prompt|task|query|title)"\s*:\s*"((?:[^"\\]|\\.)*)/.exec(
+    trimmed,
+  );
+  const partialValue = partialMatch?.[2];
+  if (partialValue && partialValue.length > 0) {
+    return partialValue.replace(/\\"/g, '"').replace(/\\\\/g, "\\");
+  }
+  return undefined;
+}
+
 function normalizeToolKind(kind: unknown): string | undefined {
   return typeof kind === "string" && kind.trim().length > 0 ? kind.trim() : undefined;
 }
@@ -298,6 +336,10 @@ function makeToolCallState(
   const title = input.title?.trim() || undefined;
   const command = extractToolCallCommand(input.rawInput, title);
   const textContent = extractTextContentFromToolCallContent(input.content);
+  // Kimi's Agent sub-agent tool streams its input JSON inside content[0] —
+  // pulling `description`/`prompt` out of the stream keeps the timeline
+  // card informative (`Agent: Explore codebase`) as the args arrive.
+  const streamedSubtitle = extractStreamedJsonSubtitle(textContent);
   const normalizedTitle =
     title && title.toLowerCase() !== "terminal" && title.toLowerCase() !== "tool call"
       ? title
@@ -326,12 +368,13 @@ function makeToolCallState(
   if (input.locations !== undefined) {
     data.locations = input.locations;
   }
-  const fallbackDetail = command ?? normalizedTitle ?? textContent;
+  const fallbackDetail = command ?? streamedSubtitle ?? normalizedTitle ?? textContent;
   const hasPresentationSeed =
     title !== undefined ||
     kind !== undefined ||
     command !== undefined ||
     normalizedTitle !== undefined ||
+    streamedSubtitle !== undefined ||
     textContent !== undefined;
   const presentation = hasPresentationSeed
     ? deriveToolActivityPresentation({

@@ -87,6 +87,16 @@ interface KimiSessionContext {
   readonly pendingApprovals: Map<ApprovalRequestId, PendingApproval>;
   readonly pendingUserInputs: Map<ApprovalRequestId, PendingUserInput>;
   readonly turns: Array<{ id: TurnId; items: Array<unknown> }>;
+  /**
+   * Tool calls kimi has started but not yet terminated. Kimi does NOT emit a
+   * final `tool_call_update status=failed` on cancel — when a prompt resolves
+   * with `stopReason: "cancelled"`, any entries left here need synthetic
+   * terminal states so the UI doesn't show a perpetually spinning card.
+   */
+  readonly openToolCalls: Map<
+    string,
+    { toolCall: import("../acp/AcpRuntimeModel.ts").AcpToolCallState; rawPayload: unknown }
+  >;
   lastPlanFingerprint: string | undefined;
   activeTurnId: TurnId | undefined;
   stopped: boolean;
@@ -448,6 +458,7 @@ function makeKimiAdapter(options?: KimiAdapterLiveOptions) {
             pendingApprovals,
             pendingUserInputs,
             turns: [],
+            openToolCalls: new Map(),
             lastPlanFingerprint: undefined,
             activeTurnId: undefined,
             stopped: false,
@@ -495,6 +506,17 @@ function makeKimiAdapter(options?: KimiAdapterLiveOptions) {
                     return;
                   case "ToolCallUpdated":
                     yield* logNative(ctx.threadId, "session/update", event.rawPayload);
+                    if (
+                      event.toolCall.status === "completed" ||
+                      event.toolCall.status === "failed"
+                    ) {
+                      ctx.openToolCalls.delete(event.toolCall.toolCallId);
+                    } else {
+                      ctx.openToolCalls.set(event.toolCall.toolCallId, {
+                        toolCall: event.toolCall,
+                        rawPayload: event.rawPayload,
+                      });
+                    }
                     yield* offerRuntimeEvent(
                       makeAcpToolCallEvent({
                         stamp: yield* makeEventStamp(),
@@ -647,6 +669,26 @@ function makeKimiAdapter(options?: KimiAdapterLiveOptions) {
               mapAcpToAdapterError(PROVIDER, input.threadId, "session/prompt", error),
             ),
           );
+
+        // Kimi never emits a terminal tool_call_update on cancel, so open tool
+        // calls would otherwise stay spinning in the UI. Synthesize a failed
+        // frame for each one before closing out the turn.
+        if (result.stopReason === "cancelled" && ctx.openToolCalls.size > 0) {
+          const openEntries = Array.from(ctx.openToolCalls.values());
+          ctx.openToolCalls.clear();
+          for (const entry of openEntries) {
+            yield* offerRuntimeEvent(
+              makeAcpToolCallEvent({
+                stamp: yield* makeEventStamp(),
+                provider: PROVIDER,
+                threadId: ctx.threadId,
+                turnId: ctx.activeTurnId,
+                toolCall: { ...entry.toolCall, status: "failed" },
+                rawPayload: entry.rawPayload,
+              }),
+            );
+          }
+        }
 
         ctx.turns.push({ id: turnId, items: [{ prompt: promptParts, result }] });
         ctx.session = {
